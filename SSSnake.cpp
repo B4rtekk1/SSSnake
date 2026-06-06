@@ -305,7 +305,7 @@ void lose(ILI9341& display, uint16_t bx, uint16_t by, uint16_t boardHeight) {
 
 void loadGame(ILI9341& display, uint16_t bx, uint16_t by) {
     display.fillScreen(COLOR_BLACK);
-    display.drawString(bx + 20, by + 20, "Press any button to start", COLOR_WHITE, 2U);
+    display.drawString(bx + 20, by + 20, "Press any button\nto start", COLOR_WHITE, 2U);
 }
 
 void initializeGame() {

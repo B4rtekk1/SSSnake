@@ -213,11 +213,17 @@ void ILI9341::drawChar(uint16_t x, uint16_t y, char c, uint16_t color, uint8_t s
 
 void ILI9341::drawString(uint16_t x, uint16_t y, const char* str, uint16_t color, uint8_t scale) {
     uint16_t cursorX = x;
+    uint16_t cursorY = y;
     while (*str) {
-        if (*str == ' ') {
+        if (*str == '\n') {
+            cursorX = x;
+            cursorY += 8 * scale;
+        } else if (*str == '\r') {
+            // Ignore CR so both "\n" and Windows-style "\r\n" work.
+        } else if (*str == ' ') {
             cursorX += 6 * scale;
         } else {
-            drawChar(cursorX, y, *str, color, scale);
+            drawChar(cursorX, cursorY, *str, color, scale);
             cursorX += 6 * scale; // 5 pixels for char + 1 pixel space, scaled
         }
         ++str;
