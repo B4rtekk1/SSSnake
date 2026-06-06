@@ -95,3 +95,39 @@ subs r1, r1, #1 @ Decrease size
 bne clear_loop
 clear_done:
 bx lr @ Return from function
+
+.global asm_place_apple
+.type asm_place_apple, %function
+
+@r0 = pointer to grid array
+@r1 = total number of cells in grid
+@r2 = target empty cell index
+@ return 1 if apple placed, 0 otherwise
+
+asm_place_apple:
+cmp r1, #0
+beq apple_not_found @ If grid size is 0, can't place apple
+
+apple_loop:
+ldrb r3, [r0] @ Load current cell state
+cmp r3, #0 @ Check if cell is EMPTY
+bne apple_next
+
+cmp r2, #0
+beq apple_found @ If target index is 0, place apple here
+subs r2, r2, #1 @ Decrease target index
+
+apple_next:
+adds r0, r0, #1 @ Move to next cell
+subs r1, r1, #1 @ Decrease cell count
+bne apple_loop
+
+apple_not_found:
+movs r0, #0 @ No empty cell found
+bx lr
+
+apple_found:
+movs r3, #2 @ APPLE
+strb r3, [r0]
+movs r0, #1 @ Apple placed successfully
+bx lr

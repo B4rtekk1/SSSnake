@@ -15,6 +15,7 @@ extern "C" bool asm_is_opposite(uint8_t dir1, uint8_t dir2);
 extern "C" bool asm_snake_collision(const SnakeSegment* snake, uint16_t limit, uint8_t x, uint8_t y);
 extern "C" void asm_shift_snake(SnakeSegment* snake, uint16_t length);
 extern "C" void asm_clear_grid(CellState* grid, uint16_t size);
+extern "C" bool asm_place_apple(CellState* grid, uint16_t cells, uint16_t target);
 
 #ifndef FLASH_SECTOR_SIZE
 #define FLASH_SECTOR_SIZE 4096
@@ -177,19 +178,12 @@ static void placeApple(){
             }
         }
     }
-    if (emptyCount == 0) return win();
-    uint16_t target = rand() % emptyCount;
-    for (uint8_t y = 0; y < ROWS; ++y) {
-        for (uint8_t x = 0; x < COLS; ++x) {
-            if (grid[y][x] == EMPTY) {
-                if (target == 0) {
-                    grid[y][x] = APPLE;
-                    return;
-                }
-                target--;
-            }
-        }
+    if (emptyCount == 0) {
+        win();
+        return;
     }
+    uint16_t target = rand() % emptyCount;
+    asm_place_apple(&grid[0][0], ROWS * COLS, target);
 }
 
 void drawCell(ILI9341& display, uint16_t bx, uint16_t by, uint8_t col, uint8_t row, uint16_t color) {
@@ -493,6 +487,7 @@ void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
                 for (uint8_t x = 0; x < COLS; ++x) {
                     if (grid[y][x] == APPLE) {
                         drawCell(display, bx, by, x, y, APPLE_COLOR);
+                        drawGridCell(display, bx, by, x, y);
                         goto apple_drawn;
                     }
                 }
