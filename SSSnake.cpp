@@ -9,9 +9,12 @@
 #include "ili9341.h"
 
 struct SnakeSegment;
+enum CellState : uint8_t;
 
 extern "C" bool asm_is_opposite(uint8_t dir1, uint8_t dir2);
 extern "C" bool asm_snake_collision(const SnakeSegment* snake, uint16_t limit, uint8_t x, uint8_t y);
+extern "C" void asm_shift_snake(SnakeSegment* snake, uint16_t length);
+extern "C" void asm_clear_grid(CellState* grid, uint16_t size);
 
 #ifndef FLASH_SECTOR_SIZE
 #define FLASH_SECTOR_SIZE 4096
@@ -310,11 +313,7 @@ void loadGame(ILI9341& display, uint16_t bx, uint16_t by) {
 
 void initializeGame() {
     requestDirection(RIGHT);
-    for (uint16_t row = 0; row < ROWS; ++row) {
-        for (uint16_t col = 0; col < COLS; ++col) {
-            grid[row][col] = EMPTY;
-        }
-    }
+    asm_clear_grid(&grid[0][0], ROWS * COLS);
     snake[0] = {2, 0};
     snake[1] = {1, 0};
     snake[2] = {0, 0};
@@ -480,9 +479,7 @@ void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
             score++;
         }
 
-        for (uint16_t i = snake_length; i > 0; i--) {
-            snake[i] = snake[i-1];
-        }
+        asm_shift_snake(snake, snake_length);
         snake[0] = newHead;
 
         grid[newHead.y][newHead.x] = SNAKE;
