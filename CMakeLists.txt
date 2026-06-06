@@ -48,6 +48,7 @@ pico_enable_stdio_usb(SSSnake 0)
 target_link_libraries(SSSnake
     pico_stdlib
     hardware_spi
+    hardware_pwm
     hardware_gpio
     hardware_flash
     hardware_clocks

@@ -12,8 +12,8 @@
 #define LCD_RST_PIN 15
 #define LCD_BL_PIN 13
 
-#define LCD_HEIGHT 240
-#define LCD_WIDTH 320
+#define LCD_HEIGHT 320
+#define LCD_WIDTH 240
 
 extern const uint8_t font5x7[36][5];
 
@@ -34,8 +34,8 @@ class ILI9341 {
     void fillScreen(uint16_t color);
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
     void drawPixel(uint16_t x, uint16_t y, uint16_t color);
-    void drawChar(uint16_t x, uint16_t y, char c, uint16_t color);
-    void drawString(uint16_t x, uint16_t y, const char* str, uint16_t color);
+    void drawChar(uint16_t x, uint16_t y, char c, uint16_t color, uint8_t scale = 1);
+    void drawString(uint16_t x, uint16_t y, const char* str, uint16_t color, uint8_t scale = 1);
     void setRotation(uint8_t rotation);
 
     private:

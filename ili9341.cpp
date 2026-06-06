@@ -182,7 +182,7 @@ void ILI9341::setRotation(uint8_t rotation) {
     }
 }
 
-void ILI9341::drawChar(uint16_t x, uint16_t y, char c, uint16_t color) {
+void ILI9341::drawChar(uint16_t x, uint16_t y, char c, uint16_t color, uint8_t scale) {
     uint8_t index;
 
     if (c >= '0' && c <= '9') {
@@ -201,20 +201,24 @@ void ILI9341::drawChar(uint16_t x, uint16_t y, char c, uint16_t color) {
         uint8_t colData = font5x7[index][col];
         for (uint8_t row = 0; row < 7; row++) {
             if (colData & (1u << row)) {
-                drawPixel(x + col, y + row, color);
+                if (scale <= 1) {
+                    drawPixel(x + col, y + row, color);
+                } else {
+                    fillRect(x + col * scale, y + row * scale, scale, scale, color);
+                }
             }
         }
     }
 }
 
-void ILI9341::drawString(uint16_t x, uint16_t y, const char* str, uint16_t color) {
+void ILI9341::drawString(uint16_t x, uint16_t y, const char* str, uint16_t color, uint8_t scale) {
     uint16_t cursorX = x;
     while (*str) {
         if (*str == ' ') {
-            cursorX += 6;
+            cursorX += 6 * scale;
         } else {
-            drawChar(cursorX, y, *str++, color);
-            cursorX += 6; // 5 pixels for char + 1 pixel space
+            drawChar(cursorX, y, *str, color, scale);
+            cursorX += 6 * scale; // 5 pixels for char + 1 pixel space, scaled
         }
         ++str;
     }
