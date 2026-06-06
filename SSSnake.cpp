@@ -8,6 +8,11 @@
 #include "hardware/pwm.h"
 #include "ili9341.h"
 
+struct SnakeSegment;
+
+extern "C" bool asm_is_opposite(uint8_t dir1, uint8_t dir2);
+extern "C" bool asm_snake_collision(const SnakeSegment* snake, uint16_t limit, uint8_t x, uint8_t y);
+
 #ifndef FLASH_SECTOR_SIZE
 #define FLASH_SECTOR_SIZE 4096
 #endif
@@ -120,10 +125,8 @@ static uint8_t score = 0;
 static const uint32_t MOVE_INTERVAL = 100000; // microseconds (0.1 seconds)
 
 static bool isOpposite(Direction dir1, Direction dir2) {
-    return (dir1 == UP && dir2 == DOWN) || (dir1 == DOWN && dir2 == UP) ||
-           (dir1 == LEFT && dir2 == RIGHT) || (dir1 == RIGHT && dir2 == LEFT);
+    return asm_is_opposite(static_cast<uint8_t>(dir1), static_cast<uint8_t>(dir2));
 }
-
 static void win();
 
 static bool isButtonPressed(uint8_t pin) {
@@ -300,6 +303,11 @@ void lose(ILI9341& display, uint16_t bx, uint16_t by, uint16_t boardHeight) {
     display.drawString(bx + 20, by + boardHeight / 2 + 8, "PRESS ANY BUTTON", COLOR_WHITE, 2U);
 }
 
+void loadGame(ILI9341& display, uint16_t bx, uint16_t by) {
+    display.fillScreen(COLOR_BLACK);
+    display.drawString(bx + 20, by + 20, "Press any button to start", COLOR_WHITE, 2U);
+}
+
 void initializeGame() {
     requestDirection(RIGHT);
     for (uint16_t row = 0; row < ROWS; ++row) {
@@ -392,10 +400,17 @@ void generateSound(uint32_t freq = Notes::C5, uint16_t duration_ms = 100) {
     pwm_set_gpio_level(BUZZER_PIN, 0); // Turn off sound
 }
 
+void resetSound() {
+    melodyPlaying = false;
+    melodyIndex = 0;
+    melodyStartTime = 0;
+    pwm_set_gpio_level(BUZZER_PIN, 0);
+}
+
 void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
     const uint16_t boardHeight = ROWS*CELL_SIZE;
     bool firstFrame = true;
-    uint8_t lastScore = 255;
+    uint8_t lastScore = 255;    
     while (gameOn) {
         updateSound();
         checkButtonInput();
@@ -425,15 +440,10 @@ void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
         if (!hit_wall) grow = (grid[newHead.y][newHead.x] == APPLE);
 
         uint16_t checkLimit = grow ? snake_length : (snake_length - 1);
-        bool collision = false;
-        for (uint16_t i = 1; i < checkLimit; i++) {
-            if (newHead.x == snake[i].x && newHead.y == snake[i].y) {
-                collision = true;
-                break;
-            }
-        }
+        bool collision = asm_snake_collision(snake, checkLimit, newHead.x, newHead.y);
 
         if (collision || hit_wall) {
+            resetSound();
             if (score > highscore) {
                 highscore = score;
                 save_uint8_to_flash(highscore);
@@ -525,6 +535,21 @@ int main()
     const uint16_t by = (screen_h > board_h) ? (screen_h - board_h) / 2 : 0;
 
     display.fillScreen(COLOR_BLACK);
+    loadGame(display, bx, by);
+    while (true) {
+                // Poll raw button state without updating game direction
+                if (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
+                    isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
+                    // wait for all buttons to be released to avoid immediate direction on restart
+                    while (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
+                           isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
+                        sleep_ms(50);
+                    }
+                    sleep_ms(50); // additional debounce
+                    break;
+                }
+                sleep_ms(50);
+            }
     initializeGame();
     gameLoop(display, bx, by);
 

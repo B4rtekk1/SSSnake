@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(SSSnake SSSnake.cpp ili9341.cpp)
+add_executable(SSSnake SSSnake.cpp ili9341.cpp asm_utils.s)
 
 pico_set_program_name(SSSnake "SSSnake")
 pico_set_program_version(SSSnake "0.1")
