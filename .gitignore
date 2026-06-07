@@ -1,2 +1,7 @@
 build
+build-*/
 !.vscode/*
+ai/*.pth
+ai/*.pt
+ai/__pycache__/**
+.idea

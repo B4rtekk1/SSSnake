@@ -6,6 +6,7 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "hardware/pwm.h"
+#include "dqn_inference.h"
 #include "ili9341.h"
 
 struct SnakeSegment;
@@ -37,6 +38,12 @@ static const uint8_t APPLES_ON_BOARD = 1;
 
 #define BUZZER_PIN 18
 
+#ifndef SSSNAKE_ENABLE_DQN
+#define SSSNAKE_ENABLE_DQN 0
+#endif
+
+static constexpr bool DQN_AGENT_ENABLED = (SSSNAKE_ENABLE_DQN != 0);
+static bool aiModeEnabled = DQN_AGENT_ENABLED;
 static const bool BUTTONS_ACTIVE_LOW = true;
 
 static const uint16_t SNAKE_COLOR = COLOR_BLUE;
@@ -72,7 +79,6 @@ class Notes {
     static const uint16_t G4 = 392;
     static const uint16_t A4 = 440;
     static const uint16_t B4 = 493;
-
     static const uint16_t C5 = 523;
     static const uint16_t D5 = 587;
     static const uint16_t E5 = 659;
@@ -155,6 +161,165 @@ static void requestDirection(Direction dir) {
     if (isOpposite(current_direction, dir)) return;
     if (isOpposite(next_direction, dir)) return;
     next_direction = dir;
+}
+
+static Direction turnRight(Direction dir) {
+    switch (dir) {
+        case UP: return RIGHT;
+        case RIGHT: return DOWN;
+        case DOWN: return LEFT;
+        case LEFT: return UP;
+    }
+    return RIGHT;
+}
+
+static Direction turnLeft(Direction dir) {
+    switch (dir) {
+        case UP: return LEFT;
+        case LEFT: return DOWN;
+        case DOWN: return RIGHT;
+        case RIGHT: return UP;
+    }
+    return RIGHT;
+}
+
+static Direction actionToDirection(uint8_t action, Direction base) {
+    if (action == 1) {
+        return turnRight(base);
+    }
+    if (action == 2) {
+        return turnLeft(base);
+    }
+    return base;
+}
+
+static bool movedHead(Direction dir, SnakeSegment& nextHead) {
+    nextHead = snake[0];
+    switch (dir) {
+        case UP:
+            if (nextHead.y == 0) return false;
+            nextHead.y--;
+            break;
+        case LEFT:
+            if (nextHead.x == 0) return false;
+            nextHead.x--;
+            break;
+        case DOWN:
+            if (nextHead.y == ROWS - 1) return false;
+            nextHead.y++;
+            break;
+        case RIGHT:
+            if (nextHead.x == COLS - 1) return false;
+            nextHead.x++;
+            break;
+    }
+    return true;
+}
+
+static bool wouldCollide(Direction dir) {
+    SnakeSegment nextHead;
+    if (!movedHead(dir, nextHead)) {
+        return true;
+    }
+
+    if (grid[nextHead.y][nextHead.x] != SNAKE) {
+        return false;
+    }
+
+    const SnakeSegment tail = snake[snake_length - 1];
+    return !(nextHead.x == tail.x && nextHead.y == tail.y);
+}
+
+static bool findApple(uint8_t& appleX, uint8_t& appleY) {
+    for (uint8_t y = 0; y < ROWS; ++y) {
+        for (uint8_t x = 0; x < COLS; ++x) {
+            if (grid[y][x] == APPLE) {
+                appleX = x;
+                appleY = y;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static uint16_t manhattanDistance(SnakeSegment point, uint8_t x, uint8_t y) {
+    uint16_t dx = (point.x > x) ? (point.x - x) : (x - point.x);
+    uint16_t dy = (point.y > y) ? (point.y - y) : (y - point.y);
+    return dx + dy;
+}
+
+static void buildDqnState(float state[11]) {
+    const Direction straight = current_direction;
+    const Direction right = turnRight(current_direction);
+    const Direction left = turnLeft(current_direction);
+
+    uint8_t appleX = snake[0].x;
+    uint8_t appleY = snake[0].y;
+    findApple(appleX, appleY);
+
+    state[0] = wouldCollide(straight) ? 1.0f : 0.0f;
+    state[1] = wouldCollide(right) ? 1.0f : 0.0f;
+    state[2] = wouldCollide(left) ? 1.0f : 0.0f;
+    state[3] = (current_direction == LEFT) ? 1.0f : 0.0f;
+    state[4] = (current_direction == RIGHT) ? 1.0f : 0.0f;
+    state[5] = (current_direction == UP) ? 1.0f : 0.0f;
+    state[6] = (current_direction == DOWN) ? 1.0f : 0.0f;
+    state[7] = (appleX < snake[0].x) ? 1.0f : 0.0f;
+    state[8] = (appleX > snake[0].x) ? 1.0f : 0.0f;
+    state[9] = (appleY < snake[0].y) ? 1.0f : 0.0f;
+    state[10] = (appleY > snake[0].y) ? 1.0f : 0.0f;
+}
+
+static uint8_t chooseSafeGreedyAction() {
+    uint8_t appleX = snake[0].x;
+    uint8_t appleY = snake[0].y;
+    findApple(appleX, appleY);
+
+    const uint16_t currentDistance = manhattanDistance(snake[0], appleX, appleY);
+    int16_t bestScore = -30000;
+    uint8_t bestAction = 0;
+
+    for (uint8_t action = 0; action < 3; ++action) {
+        const Direction dir = actionToDirection(action, current_direction);
+        SnakeSegment nextHead;
+        int16_t actionScore = 0;
+
+        if (!movedHead(dir, nextHead) || wouldCollide(dir)) {
+            actionScore -= 10000;
+        } else {
+            const uint16_t nextDistance = manhattanDistance(nextHead, appleX, appleY);
+            actionScore += 1000;
+            actionScore += static_cast<int16_t>(currentDistance - nextDistance) * 20;
+            if (action == 0) {
+                actionScore += 2;
+            }
+        }
+
+        if (actionScore > bestScore) {
+            bestScore = actionScore;
+            bestAction = action;
+        }
+    }
+
+    return bestAction;
+}
+
+static void updateDqnInput() {
+    float state[11];
+    buildDqnState(state);
+
+    uint8_t action = dqnWeightsReady() ? dqnPredictAction(state) : chooseSafeGreedyAction();
+    Direction desiredDirection = actionToDirection(action, current_direction);
+
+    if (wouldCollide(desiredDirection)) {
+        action = chooseSafeGreedyAction();
+        desiredDirection = actionToDirection(action, current_direction);
+    }
+
+    if (!isOpposite(current_direction, desiredDirection)) {
+        next_direction = desiredDirection;
+    }
 }
 
 void checkButtonInput() {
@@ -297,12 +462,147 @@ void win() {
 void lose(ILI9341& display, uint16_t bx, uint16_t by, uint16_t boardHeight) {
     display.fillRect(bx, by, COLS * CELL_SIZE, ROWS * CELL_SIZE, COLOR_BLACK);
     display.drawString(bx + 20, by + boardHeight / 2 - 28, "GAME OVER", COLOR_RED, 4U);
-    display.drawString(bx + 20, by + boardHeight / 2 + 8, "PRESS ANY BUTTON", COLOR_WHITE, 2U);
+    if (aiModeEnabled) {
+        display.drawString(bx + 20, by + boardHeight / 2 + 8, "AUTO RESTART", COLOR_WHITE, 2U);
+    } else {
+        display.drawString(bx + 20, by + boardHeight / 2 + 8, "PRESS ANY BUTTON", COLOR_WHITE, 2U);
+    }
 }
+
+static void updateLoadGameBlink(ILI9341& display, uint16_t bx, uint16_t by,
+                                bool selectedVisible);
+static bool anyButtonPressed();
 
 void loadGame(ILI9341& display, uint16_t bx, uint16_t by) {
     display.fillScreen(COLOR_BLACK);
-    display.drawString(bx + 20, by + 20, "Press any button\nto start", COLOR_WHITE, 2U);
+
+    aiModeEnabled = DQN_AGENT_ENABLED;
+    bool selectedVisible = true;
+    uint32_t lastBlinkMs = to_ms_since_boot(get_absolute_time());
+
+    display.drawString(bx + 20, by + 140,
+                       "UP: AI mode\nDOWN: Player mode\nLEFT/RIGHT: start",
+                       COLOR_WHITE, 2U);
+    updateLoadGameBlink(display, bx, by, selectedVisible);
+
+    while (true) {
+        if (isButtonPressed(BTN_UP_PIN)) {
+            aiModeEnabled = true;
+            selectedVisible = true;
+            updateLoadGameBlink(display, bx, by, selectedVisible);
+            while (anyButtonPressed()) sleep_ms(30);
+        } else if (isButtonPressed(BTN_DOWN_PIN)) {
+            aiModeEnabled = false;
+            selectedVisible = true;
+            updateLoadGameBlink(display, bx, by, selectedVisible);
+            while (anyButtonPressed()) sleep_ms(30);
+        } else if (isButtonPressed(BTN_LEFT_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
+            while (anyButtonPressed()) sleep_ms(30);
+            break;
+        }
+
+        const uint32_t nowMs = to_ms_since_boot(get_absolute_time());
+        if (nowMs - lastBlinkMs >= 300) {
+            selectedVisible = !selectedVisible;
+            updateLoadGameBlink(display, bx, by, selectedVisible);
+            lastBlinkMs = nowMs;
+        }
+        sleep_ms(30);
+    }
+
+    display.fillRect(bx + 20, by + 140, 220, 60, COLOR_BLACK);
+    if (aiModeEnabled) {
+        if (dqnWeightsReady()) {
+            display.drawString(bx + 20, by + 140, "DQN agent\nstarting", COLOR_WHITE, 2U);
+        } else {
+            display.drawString(bx + 20, by + 140, "DQN fallback\nstarting", COLOR_WHITE, 2U);
+        }
+        sleep_ms(700);
+    } else {
+        display.drawString(bx + 20, by + 140, "Player mode\nstarting", COLOR_WHITE, 2U);
+        sleep_ms(400);
+    }
+}
+
+static void drawLoadGameMode(ILI9341& display, uint16_t bx, uint16_t by,
+                             bool aiMode, bool selectedVisible) {
+    const uint16_t x = bx + 20;
+    const uint16_t y = by + (aiMode ? 20 : 80);
+    const bool selected = (aiMode == aiModeEnabled);
+    const uint16_t color = selected ? (selectedVisible ? COLOR_GREEN : COLOR_BLACK) : COLOR_WHITE;
+    const char* label = aiMode ? "AI mode" : "Player mode";
+
+    display.fillRect(x, y, 150, 18, COLOR_BLACK);
+    display.drawString(x, y, label, color, 2U);
+}
+
+static void updateLoadGameBlink(ILI9341& display, uint16_t bx, uint16_t by,
+                                bool selectedVisible) {
+    drawLoadGameMode(display, bx, by, true, selectedVisible);
+    drawLoadGameMode(display, bx, by, false, selectedVisible);
+}
+
+static bool anyButtonPressed() {
+    return isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
+           isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN);
+}
+
+static void waitForManualButtonPress() {
+    while (true) {
+        if (anyButtonPressed()) {
+            while (anyButtonPressed()) {
+                sleep_ms(50);
+            }
+            sleep_ms(50);
+            break;
+        }
+        sleep_ms(50);
+    }
+}
+
+static void waitForStartOrAuto(ILI9341& display, uint16_t bx, uint16_t by) {
+    bool selectedVisible = true;
+    uint32_t lastBlinkMs = to_ms_since_boot(get_absolute_time());
+
+    if (aiModeEnabled) {
+        const uint32_t startMs = lastBlinkMs;
+        while (to_ms_since_boot(get_absolute_time()) - startMs < 1000) {
+            const uint32_t nowMs = to_ms_since_boot(get_absolute_time());
+            if (nowMs - lastBlinkMs >= 300) {
+                selectedVisible = !selectedVisible;
+                updateLoadGameBlink(display, bx, by, selectedVisible);
+                lastBlinkMs = nowMs;
+            }
+            sleep_ms(50);
+        }
+        return;
+    }
+
+    while (true) {
+        if (anyButtonPressed()) {
+            while (anyButtonPressed()) {
+                sleep_ms(50);
+            }
+            sleep_ms(50);
+            break;
+        }
+
+        const uint32_t nowMs = to_ms_since_boot(get_absolute_time());
+        if (nowMs - lastBlinkMs >= 300) {
+            selectedVisible = !selectedVisible;
+            updateLoadGameBlink(display, bx, by, selectedVisible);
+            lastBlinkMs = nowMs;
+        }
+        sleep_ms(50);
+    }
+}
+
+static void waitForRestartOrAuto() {
+    if (aiModeEnabled) {
+        sleep_ms(750);
+    } else {
+        waitForManualButtonPress();
+    }
 }
 
 void initializeGame() {
@@ -406,7 +706,11 @@ void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
     uint8_t lastScore = 255;    
     while (gameOn) {
         updateSound();
-        checkButtonInput();
+        if (aiModeEnabled) {
+            updateDqnInput();
+        } else {
+            checkButtonInput();
+        }
         uint32_t now = time_us_32();
         if (now - last_move_time < MOVE_INTERVAL) continue;
         last_move_time = now;
@@ -441,22 +745,9 @@ void gameLoop(ILI9341& display, uint16_t bx, uint16_t by) {
                 highscore = score;
                 save_uint8_to_flash(highscore);
             }
-            // Always show lose screen and wait for player's input to restart
+            // Manual mode waits for a button; DQN mode keeps running unattended.
             lose(display, bx, by, boardHeight);
-            while (true) {
-                // Poll raw button state without updating game direction
-                if (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
-                    isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
-                    // wait for all buttons to be released to avoid immediate direction on restart
-                    while (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
-                           isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
-                        sleep_ms(50);
-                    }
-                    sleep_ms(50); // additional debounce
-                    break;
-                }
-                sleep_ms(50);
-            }
+            waitForRestartOrAuto();
             initializeGame();
             firstFrame = true;
             continue;
@@ -528,20 +819,6 @@ int main()
 
     display.fillScreen(COLOR_BLACK);
     loadGame(display, bx, by);
-    while (true) {
-                // Poll raw button state without updating game direction
-                if (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
-                    isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
-                    // wait for all buttons to be released to avoid immediate direction on restart
-                    while (isButtonPressed(BTN_UP_PIN) || isButtonPressed(BTN_LEFT_PIN) ||
-                           isButtonPressed(BTN_DOWN_PIN) || isButtonPressed(BTN_RIGHT_PIN)) {
-                        sleep_ms(50);
-                    }
-                    sleep_ms(50); // additional debounce
-                    break;
-                }
-                sleep_ms(50);
-            }
     initializeGame();
     gameLoop(display, bx, by);
 
