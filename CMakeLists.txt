@@ -24,7 +24,6 @@ if (EXISTS ${picoVscode})
 endif()
 # ====================================================================================
 set(PICO_BOARD pico2 CACHE STRING "Board type")
-option(SSSNAKE_ENABLE_DQN "Enable autonomous DQN agent mode" OFF)
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -36,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(SSSnake SSSnake.cpp ili9341.cpp dqn_inference.cpp asm_utils.s)
+add_executable(SSSnake SSSnake.cpp ili9341.cpp dqn_inference.cpp asm_utils.s sound.cpp storage.cpp render.cpp game_state.cpp)
 
 pico_set_program_name(SSSnake "SSSnake")
 pico_set_program_version(SSSnake "0.1")
@@ -59,10 +58,6 @@ target_link_libraries(SSSnake
 # Add the standard include files to the build
 target_include_directories(SSSnake PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-)
-
-target_compile_definitions(SSSnake PRIVATE
-    SSSNAKE_ENABLE_DQN=$<BOOL:${SSSNAKE_ENABLE_DQN}>
 )
 
 pico_add_extra_outputs(SSSnake)

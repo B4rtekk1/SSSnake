@@ -154,14 +154,26 @@ void ILI9341::fillScreen(uint16_t color) {
 }
 
 void ILI9341::fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
-    setWindow(x, y, x + w - 1, y + h - 1);
-    uint8_t hi = color >> 8, lo = color & 0xFF;
-    uint8_t buf[2] = {hi, lo};
+    if (w==0 || h==0) return;
+
+    static uint8_t buffer[128*2]; // Buffer for 128 pixels (max width of a single SPI transaction)
+    setWindow(x, y, x+w-1, y+h-1);
+    uint8_t hi = color >> 8;
+    uint8_t lo = color & 0xFF;
+
+    for (uint16_t i = 0; i < sizeof(buffer); i += 2) {
+        buffer[i] = hi;
+        buffer[i+1] = lo;
+    }
+
+    uint32_t pixels = (uint32_t)w * h;
     dcData();
     csLow();
 
-    for (uint32_t i = 0; i < (uint32_t)w * h; i++) {
-        spi_write_blocking(LCD_SPI_PORT, buf, 2);
+    while (pixels > 0) {
+        uint32_t batch = (pixels > 128) ? 128 : pixels;
+        spi_write_blocking(LCD_SPI_PORT, buffer, batch * 2);
+        pixels -= batch;
     }
     csHigh();
 }
