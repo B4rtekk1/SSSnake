@@ -51,7 +51,7 @@ void drawBoard(ILI9341& display, uint16_t bx, uint16_t by) {
 }
 
 void drawDigit(ILI9341& display, uint16_t x, uint16_t y,
-               uint8_t digit, uint16_t color, uint8_t scale = 2) {
+               uint8_t digit, uint16_t color, uint8_t scale) {
     if (digit > 9) return;
     extern const uint8_t font5x7[36][5];
     for (uint8_t col = 0; col < 5; col++) {
@@ -66,17 +66,17 @@ void drawDigit(ILI9341& display, uint16_t x, uint16_t y,
 void drawNumber(ILI9341& display, uint16_t x, uint16_t y,
                 uint8_t value, uint16_t color) {
     if (value >= 100) {
-        drawDigit(display, x,      y, value / 100,       color);
-        drawDigit(display, x + 10, y, (value / 10) % 10, color);
-        drawDigit(display, x + 20, y, value % 10,        color);
+        drawDigit(display, x,      y, value / 100,       color, 2);
+        drawDigit(display, x + 10, y, (value / 10) % 10, color, 2);
+        drawDigit(display, x + 20, y, value % 10,        color, 2);
         return;
     }
     if (value >= 10) {
-        drawDigit(display, x,      y, value / 10, color);
-        drawDigit(display, x + 10, y, value % 10, color);
+        drawDigit(display, x,      y, value / 10, color, 2);
+        drawDigit(display, x + 10, y, value % 10, color, 2);
         return;
     }
-    drawDigit(display, x, y, value, color);
+    drawDigit(display, x, y, value, color, 2);
 }
 
 void drawLoadGameMode(ILI9341& display, uint16_t bx, uint16_t by,
