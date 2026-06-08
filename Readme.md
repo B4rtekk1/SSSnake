@@ -4,6 +4,10 @@ SSSnake is a Snake game for Raspberry Pi Pico 2. It renders a 15 x 15 board on a
 
 The firmware can also be built in autonomous DQN mode. In that variant, a small neural network trained on a PC is exported to `dqn_weights.h` and compiled into the Pico program.
 
+## DEMO
+
+https://github.com/user-attachments/assets/9b24a8a7-c807-441a-a60d-86283e8e426a
+
 ## Features
 
 - 15 x 15 Snake board rendered on an ILI9341 display.
